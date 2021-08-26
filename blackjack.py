@@ -2,18 +2,70 @@
 # -*- coding: utf-8 -*-
 
 import signal
-import sys
 import os
 import configparser
+import sys
+from time import sleep
+class _Getch:
+    """Gets a single character from standard input.  Does not echo to the
+screen."""
+    def __init__(self):
+        try:
+            self.impl = _GetchWindows()
+        except ImportError:
+            self.impl = _GetchUnix()
 
-#TODO add min and max bets
+    def __call__(self): return self.impl()
 
+
+class _GetchUnix:
+    def __init__(self):
+        import tty, sys
+
+    def __call__(self):
+        import sys, tty, termios
+        fd = sys.stdin.fileno()
+        old_settings = termios.tcgetattr(fd)
+        try:
+            tty.setraw(sys.stdin.fileno())
+            ch = sys.stdin.read(1)
+        finally:
+            termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+        return ch
+
+
+class _GetchWindows:
+    def __init__(self):
+        import msvcrt
+
+    def __call__(self):
+        import msvcrt
+        return msvcrt.getch()
+
+
+getch = _Getch()
+
+#TODO
+#add min and max bets
+#split deck
+#ncurses display option
+#add flat betting config option
+#add multiple decks
+#add "shuffling"
+#play animation if you hit blackjack/win/loss
+#Blackjack should pay out 3/2
+#Mode to train for basic strategy
+#Add insurance optiona
+#Change tie to push
+#display probabilities of each card draw
+#end game when out of chips or if can't bet min amount
+#fix blackjack for only natural blackjacks and not after multi hits (sum of first two cards has to be 21)
 #Kill process on ctrl-c
 PID = os.getpid()
 def signal_handler(sig, frame):
     os.kill(PID, signal.SIGKILL)
 signal.signal(signal.SIGINT, signal_handler)
-
+os.system('cls' if os.name == 'nt' else 'clear')
 __version__ = "1.0"
 __author__  = "Radon Gas"
 __license__ = 'MIT'
@@ -140,7 +192,6 @@ class Player():
         Printing a player Chips
 
         """
-
         print_statement = 'Player {} has {} chips\n'.format(self.name,self.chips)
         return print_statement
 
@@ -217,8 +268,14 @@ def take_bet(player):
     while True:
 
         try:
-            current_bet = int(input("How many Chips would you like to bet : "))
-
+            current_bet = input("How many Chips would you like to bet : ")
+            if(current_bet == ''):
+                if(player.bet > 0):
+                    current_bet = player.bet
+                else:
+                    raise ValueError('oops!')
+            else:
+                current_bet = int(current_bet)
         except:
             print("Enter a Valid Number of Chips.")
 
@@ -226,7 +283,7 @@ def take_bet(player):
             if current_bet > player.chips:
                 print("Unsufficient Amount. Please try again.")
             else:
-                player.bet += current_bet
+                player.bet = current_bet
                 player.chips -= current_bet
                 os.system('cls' if os.name == 'nt' else 'clear')
                 break
@@ -245,6 +302,9 @@ def double_bet(player):
     else:
         player.chips -= player.bet
         player.bet += player.bet
+    global doubled
+    doubled = True
+
 
 '''
 ------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -292,18 +352,19 @@ def adjust_winnings(winner):
     """
     Function to adjust chips at the End of the game.
     """
-    print("players current coin " + str(player.chips))
-    print("the players bet was " + str(player.bet))
+    global doubled
     if winner == "player":
         player.chips += int(player.bet*2)
-        player.bet = 0
+        if(doubled == True):
+            player.bet = int(player.bet/2)
 
     elif winner == "tie" :
         player.chips += player.bet
-        player.bet = 0
 
-    else:
-        player.bet = 0
+    elif winner == "p_blackjack" :
+        player.chips += int(player.bet*3/2)
+
+
 
 '''
 ------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -316,12 +377,18 @@ def hit_or_stand(player_hand,deck_1,player):
 
     global player_playing
 
+    global doubled
+    doubled = False
+
     while True:
 
-        temp = input("HIT STAND OR DOUBLE? : ")
-
+        #temp = input("HIT STAND OR DOUBLE? : ")
+        print("HIT STAND OR DOUBLE? : " )
+        temp = getch()
         if temp == '':
             print("Please Choose a valid option.\n")
+            #sleep to catch kill signal before returing to getch
+            sleep(1)
 
         if temp[0].lower() == 'h':
             player_hand.add_card(deck_1.deal_one())
@@ -339,7 +406,9 @@ def hit_or_stand(player_hand,deck_1,player):
 
         else :
             print("Please Choose a valid option.\n")
+            sleep(1)
 
+    os.system('cls' if os.name == 'nt' else 'clear')
     if temp[0].lower() == 'h':
         return "h"
     else :
@@ -356,6 +425,7 @@ def player_busted():
 
     global winner
 
+    os.system('cls' if os.name == 'nt' else 'clear')
     print("\nPlayer Busted.")
     print("Dealer Wins!\n")
     winner = "dealer"
@@ -391,6 +461,17 @@ def player_wins():
     print("Player Wins!\n")
     winner = "player"
 
+def player_blackjack():
+    """
+    Final Winner : Player
+    """
+
+    global winner
+
+    print("Blackjack!\n")
+    winner = "p_blackjack"
+
+
 def dealer_wins():
     """
     Final Winner : Dealer
@@ -413,6 +494,7 @@ def show_some_cards(player_hand, dealer_hand):
     print("\nPlayer Cards are: ")
     for card in player_hand.cards:
         print("  " + str(card))
+
     print("Total value: " + str(player_hand.value))
     print("\n\nDealer Cards are: ")
     print("  " + str(dealer_hand.cards[0]))
@@ -452,8 +534,6 @@ def main(player):
     player_hand = Hand()
     dealer_hand = Hand()
 
-    print("\n--------------------------------------------------------------------------------------------------------------------\n")
-
     print(player)
 
     #TAKE A BET FROM THE PLAYER.
@@ -472,10 +552,16 @@ def main(player):
     #ASK THE PLAYER TO HIT OR STAND.
 
     player_playing = True
+    dealer_playing = True
 
     while player_playing == True:
 
-        if player_hand.value == 21:
+        if( (player_hand.cards[0].value + player_hand.cards[1].value) == 21):
+            if((dealer_hand.cards[0].value + dealer_hand.cards[1].value) == 21):
+                player_dealer_tie()
+            else:
+                player_blackjack()
+            dealer_playing = False
             break
 
         if player_hand.value > 21:
@@ -493,13 +579,13 @@ def main(player):
 
     #DEALERS TURN
 
-    dealer_playing = True
 
     while dealer_playing:
 
         if player_hand.value <= 21:
 
             while dealer_hand.value <17 :
+                os.system('cls' if os.name == 'nt' else 'clear')
                 print("\nDealer Hits......")
                 dealer_hand.add_card(deck_1.deal_one())
                 show_all_cards(player_hand, dealer_hand)
