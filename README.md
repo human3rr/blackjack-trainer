@@ -16,6 +16,9 @@ $ cd blackjack-python
 $ python blackjack.py
 ```
 
+
+![](https://giphy.com/gifs/RYp4APRZMEUR1Otlt3)
+
 ## Preview
 
 ## License
